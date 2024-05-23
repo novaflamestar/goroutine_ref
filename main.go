@@ -44,11 +44,14 @@ func validateJobs(completedJobs map[int]bool, numberOfJobs int) bool {
 }
 
 func main() {
-	completedJobs := make(map[int]bool)
-	numberOfJobs := 100
-	done := make(chan int, 1)
-	errChan := make(chan JobErrorInterface, 1)
-	maxConcurrent := make(chan bool, 5)
+	// Initial value setup.
+	completedJobs := make(map[int]bool)        // completed jobs holds a map of every completed job id associated with a true value if it ran
+	numberOfJobs := 100                        // controls the number of jobs to run in total.
+	doneJobs := make(chan int, 1)              // channel to pass finished jobs ids
+	errChan := make(chan JobErrorInterface, 1) // channel to pass a custom job error if a job fails. This custom error exists to also pass the id
+	maxConcurrent := make(chan bool, 5)        // The size of this buffer dictates how many jobs can be ran in parrallel at one time
+
+	// Start all go routines. Each go routine pool is managed by the size of the maxConcurrent buffered channel
 	for i := 0; i < numberOfJobs; i++ {
 		go func(id int, errChan chan<- JobErrorInterface, idChan chan<- int, maxConcurrent chan bool) {
 			maxConcurrent <- true
@@ -59,12 +62,13 @@ func main() {
 				return
 			}
 			idChan <- id
-		}(i, errChan, done, maxConcurrent)
+		}(i, errChan, doneJobs, maxConcurrent)
 	}
 
+	// for the number of jobs run, check for an output or an error
 	for i := 0; i < numberOfJobs; i++ {
 		select {
-		case id := <-done:
+		case id := <-doneJobs:
 			fmt.Printf("finished job %d, incrementing coutner\n", id)
 			completedJobs[id] = true
 		case err := <-errChan:
@@ -72,6 +76,8 @@ func main() {
 			completedJobs[err.GetId()] = true
 		}
 	}
+
+	// validate that all jobs ran successfully
 	if !validateJobs(completedJobs, numberOfJobs) {
 		panic("some jobs did not finish")
 	}
